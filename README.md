@@ -36,6 +36,8 @@ dsh plugin add file:D:/path/to/wagalicn-dsh-provider-proxy-1.2.1.tgz
 
 列表式，三块：**① 已生效的代理规则 / ② 快速添加（检测到的提供商）/ ③ 高级选项**。
 
+![设置 → 提供商代理（接口地址与代理已打码）](https://raw.githubusercontent.com/wagalicn/dsh-provider-proxy/main/docs/ui-provider-proxy.png)
+
 | 字段 | 说明 |
 | --- | --- |
 | 名称 | 只是标签，建议写 **设置 → 模型** 里的 provider id（如 `bedrock`） |
