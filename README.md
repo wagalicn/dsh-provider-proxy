@@ -22,16 +22,16 @@ dsh plugin add @wagalicn/dsh-provider-proxy
 dsh plugin add github:wagalicn/dsh-provider-proxy
 
 # 或从打包好的 tgz
-dsh plugin add file:D:/path/to/wagalicn-dsh-provider-proxy-1.0.0.tgz
+dsh plugin add file:D:/path/to/wagalicn-dsh-provider-proxy-1.2.1.tgz
 ```
 
 装完重启一次 DSH。
 
 ## 配置
 
-两处入口，同一份数据：
+只有一处入口：**设置 → 提供商代理**。
 
-**① 设置 → 提供商代理**（插件自己的页面，列表式）
+列表式，三块：**① 已生效的代理规则 / ② 快速添加（检测到的提供商）/ ③ 高级选项**。
 
 | 字段 | 说明 |
 | --- | --- |
@@ -39,7 +39,9 @@ dsh plugin add file:D:/path/to/wagalicn-dsh-provider-proxy-1.0.0.tgz
 | 接口地址 | 该 provider 的 API 地址，如 `https://api.openai.com/v1`；**只取 hostname** 做匹配 |
 | 代理 | `http://127.0.0.1:7890`；**留空表示直连** |
 
-**② 设置 → 模型 → 每个 provider 卡片**下方会多出「出口代理」一栏，可以直接就地填。
+页面会自动列出你**已经添加的模型提供商**（读的是「设置 → 模型」里的 provider 配置），接口地址自动带出、可以直接改；右边填上代理就会加进 ①，留空表示这家直连。新增 provider 后点一下「刷新」即可重新检测。
+
+**③ 列表外的地址**默认直连；勾选页面上的「列表外的地址跟随系统代理」，未列出的域名就会走 Windows 系统代理（或 `HTTPS_PROXY`/`HTTP_PROXY`）。
 
 改完即时生效（约 1 秒轮询），不用重启。
 
@@ -72,7 +74,7 @@ biliMode: mirror         # off | mirror | system
 | --- | --- | --- |
 | 命中 | 非空 | 走该代理 |
 | 命中 | 空 | 直连 |
-| 未命中 | — | 直连 |
+| 未命中 | — | 直连（勾选「跟随系统代理」时改走系统代理） |
 
 ## 兼容 billion-context（bili）
 
@@ -107,7 +109,7 @@ SOCKS5 不支持（`socks5://` 会告警并按直连处理）；`node:https` 隧
 日志在 `~/.dsh/provider-proxy.log`：
 
 ```
-apply   v1.0.0 pid=4956 node=v24.21.0
+apply   v1.1.0 pid=4956 node=v24.21.0
 routes  (1)
 host    bedrock-runtime.us-east-1.amazonaws.com -> http://127.0.0.1:7890
 node    https.request api.deepseek.com/chat/completions -> http://127.0.0.1:7890

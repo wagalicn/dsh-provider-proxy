@@ -34,6 +34,7 @@
  * records the fetch identity seen at apply time and one line per routed
  * request, which is what to read when a proxy "does not seem to work".
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -93,6 +94,11 @@ export const Config = z.object({
     .default(false)
     .volatile()
     .description("在 ~/.dsh/provider-proxy.log 里记录每次路由决策"),
+  systemProxy: z
+    .boolean()
+    .default(false)
+    .volatile()
+    .description("未命中列表的地址改为跟随系统代理（Windows 注册表 / HTTPS_PROXY），不勾选则一律直连"),
 });
 
 /* ------------------------------------------------------------------ log -- */
@@ -109,6 +115,55 @@ function logLine(text) {
   } catch {
     /* logging must never break routing */
   }
+}
+
+/* -------------------------------------------------------- system proxy -- */
+
+const SYSTEM_PROXY_TTL_MS = 30_000;
+let systemProxyCache = { at: 0, url: undefined };
+
+function readWindowsProxy() {
+  if (process.platform !== "win32") return undefined;
+  const key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
+  const run = (name) =>
+    execFileSync("reg", ["query", key, "/v", name], { encoding: "utf8", windowsHide: true });
+  try {
+    if (!/0x1\b/.test(run("ProxyEnable"))) return undefined;
+  } catch {
+    return undefined;
+  }
+  let raw;
+  try {
+    const out = run("ProxyServer");
+    const match = out.match(/ProxyServer\s+REG_SZ\s+(.+)/i);
+    if (match === null) return undefined;
+    raw = match[1].trim();
+  } catch {
+    return undefined;
+  }
+  if (raw.includes("=")) {
+    const parts = new Map();
+    for (const piece of raw.split(";")) {
+      const [scheme, value] = piece.split("=");
+      if (value !== undefined) parts.set(scheme.trim().toLowerCase(), value.trim());
+    }
+    raw = parts.get("https") ?? parts.get("http") ?? "";
+  }
+  if (raw === "") return undefined;
+  return /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+}
+
+/** System-wide proxy, refreshed at most every 30s; undefined means “none”. */
+function detectSystemProxy(force) {
+  const now = Date.now();
+  if (!force && now - systemProxyCache.at < SYSTEM_PROXY_TTL_MS) return systemProxyCache.url;
+  let url = readWindowsProxy();
+  if (url === undefined) {
+    const env = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy;
+    if (typeof env === "string" && /^https?:\/\//i.test(env.trim())) url = env.trim();
+  }
+  systemProxyCache = { at: now, url };
+  return url;
 }
 
 /* -------------------------------------------------------------- helpers -- */
@@ -289,6 +344,7 @@ export function apply(ctx, config) {
   let routes = [];
   let signature;
   let biliSignature;
+  let systemFallback = false;
   let agent;
   const proxyAgents = new Map();
   let installedFetch;
@@ -315,7 +371,12 @@ export function apply(ctx, config) {
       }
       if (rule.regex !== undefined && rule.regex.test(host)) wildcard = rule.proxy;
     }
-    return wildcard;
+    if (wildcard !== undefined) return wildcard;
+    if (systemFallback) {
+      const system = detectSystemProxy(false);
+      if (system !== undefined) return system;
+    }
+    return undefined;
   }
 
   /** Is this host covered by any rule (even a direct one)? */
@@ -525,6 +586,16 @@ export function apply(ctx, config) {
     if (biliKey !== biliSignature) {
       biliSignature = biliKey;
       syncBili(providers, biliMode, biliPath);
+    }
+    const wantFallback = readLive(config?.systemProxy) === true;
+    if (wantFallback !== systemFallback) {
+      systemFallback = wantFallback;
+      const detected = wantFallback ? detectSystemProxy(true) : undefined;
+      logLine(
+        wantFallback
+          ? `system proxy fallback: on${detected === undefined ? " (未检测到系统代理)" : ` -> ${detected}`}`
+          : "system proxy fallback: off",
+      );
     }
   }
 

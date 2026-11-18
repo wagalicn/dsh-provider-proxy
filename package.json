@@ -1,6 +1,6 @@
 {
   "name": "@wagalicn/dsh-provider-proxy",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "Per-provider HTTP proxy routing for DeepSeek Harness: each model provider can use its own HTTP proxy, or go direct.",
   "type": "module",
   "main": "index.js",
@@ -11,7 +11,16 @@
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
-  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "docs", "README.md", "LICENSE"],
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -64,13 +73,22 @@
       "en": "Provider Proxy"
     },
     "summary": {
-      "zh": "给每个模型提供商单独设定出口代理，未配置的直接直连；可选与 billion-context 同步。",
-      "en": "Per-provider egress proxy for model providers, with optional billion-context sync."
+      "zh": "给每个模型提供商单独设定出口代理：自动带出已添加的提供商，未配置的直接直连；可选跟随系统代理、与 billion-context 同步。",
+      "en": "Per-provider egress proxy for model providers, auto-detected from your settings, with optional system-proxy fallback and billion-context sync."
     },
-    "categories": ["网络", "设置"],
-    "surfaces": ["host", "web"],
+    "categories": [
+      "网络",
+      "设置"
+    ],
+    "surfaces": [
+      "host",
+      "web"
+    ],
     "permissions": {
-      "network": ["http:", "https:"]
+      "network": [
+        "http:",
+        "https:"
+      ]
     }
   }
 }

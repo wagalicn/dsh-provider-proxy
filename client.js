@@ -4,7 +4,6 @@ window.__ModuleLoader__.load({
     const React = require('react');
     const h = React.createElement;
 
-    const PROVIDER_CARD_SLOT = 'settings.models.provider-card';
     const SECTION_SLOT = 'settings.section';
     /** Our own bundle entry id contains this token; used to recognise the right namespace. */
     const NS_HINT = 'provider-proxy';
@@ -20,7 +19,18 @@ window.__ModuleLoader__.load({
       labelField: '名称',
       add: '+ 添加一行',
       remove: '删除',
-      empty: '还没有配置。点「添加一行」，把要代理的接口地址和代理填上。',
+      empty: '还没有代理规则。在下面「检测到的模型提供商」里给需要的填上代理即可，不用手抄接口地址。',
+      section1: '① 已生效的代理规则',
+      detectedTitle: '② 快速添加：检测到的模型提供商',
+      detectedHint: '接口地址可改；右边填上代理后自动加进 ①，留空表示这家直连。',
+      detectedNone: '没有可添加的提供商（都已配置，或「设置 → 模型」里还没有提供商）。',
+      detectedCount: (total, pending) => (total === 0 ? '未检测到' : `检测到 ${total} 个，待添加 ${pending} 个`),
+      refresh: '刷新',
+      baseURLPlaceholder2: 'https://api.example.com/v1',
+      advanced: '③ 高级选项（一般不用改）',
+      sysProxyLabel: '列表外的地址跟随系统代理',
+      sysProxyHint:
+        '勾选后，未出现在上表的域名会走系统代理（Windows「Internet 选项」里的代理，或 HTTPS_PROXY/HTTP_PROXY）；不勾选则一律直连。',
       loading: '正在读取插件配置…',
       saved: '已保存',
       saving: '保存中…',
@@ -35,6 +45,7 @@ window.__ModuleLoader__.load({
       biliOff: '不动 bili 的配置',
       biliHint:
         '模型请求如果经过 bili（本机 127.0.0.1 上的上下文代理），真正出网的是 bili 那个进程，本插件拦不到。选「同步」会把上面的接口地址与代理写进 bili 的配置文件；选「系统代理」会让 bili 用系统/环境代理。改完重启 DSH 生效。',
+      biliAbsent: '未安装 billion-context（bili）时此项无效果，也不会报错。',
     };
 
     /* ---------- helpers ---------- */
@@ -74,6 +85,14 @@ window.__ModuleLoader__.load({
         return typeof mode === 'string' && mode !== '' ? mode : 'mirror';
       } catch {
         return 'mirror';
+      }
+    }
+
+    function readSystemProxy(form) {
+      try {
+        return form?.getSnapshot?.()?.value?.systemProxy === true;
+      } catch {
+        return false;
       }
     }
 
@@ -153,6 +172,72 @@ window.__ModuleLoader__.load({
       } catch (error) {
         return { form: undefined, notes: [...notes, `get(${ns}) 抛错: ${String(error?.message ?? error)}`], ns };
       }
+    }
+
+    /* ---------- provider discovery ---------- */
+
+    const FALLBACK_BASE_URLS = {
+      anthropic: 'https://api.anthropic.com',
+      openai: 'https://api.openai.com',
+      google: 'https://generativelanguage.googleapis.com',
+      deepseek: 'https://api.deepseek.com',
+      xai: 'https://api.x.ai',
+      moonshot: 'https://api.moonshot.cn',
+      zhipu: 'https://open.bigmodel.cn',
+      qwen: 'https://dashscope.aliyuncs.com',
+      mistral: 'https://api.mistral.ai',
+      groq: 'https://api.groq.com',
+      openrouter: 'https://openrouter.ai',
+    };
+
+    /** Read one settings namespace from the mirror, e.g. "llm-pi-ai". */
+    function valueOfNamespace(ctx, ns) {
+      const forms = serviceOf(ctx);
+      if (!forms || forms.error) return undefined;
+      const { namespaces } = namespacesOf(forms);
+      for (const entry of namespaces) {
+        if (String(entry?.ns ?? '') === ns) return entry?.value;
+      }
+      return undefined;
+    }
+
+    /** Providers this app already knows about: [{ provider, baseURL }]. */
+    function detectedProviders(ctx) {
+      const out = [];
+      const seen = new Set();
+      const push = (id, baseURL) => {
+        const key = baseURL !== '' ? hostOf(baseURL) : `id:${id}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({ provider: id, baseURL });
+      };
+      const forms = serviceOf(ctx);
+      if (!forms || forms.error) return out;
+      const { namespaces } = namespacesOf(forms);
+      for (const entry of namespaces) {
+        const ns = String(entry?.ns ?? '');
+        if (ns.includes('provider-proxy')) continue;
+        const value = entry?.value;
+        if (!value || typeof value !== 'object') continue;
+        const dict = value.providers;
+        if (dict && typeof dict === 'object' && !Array.isArray(dict)) {
+          for (const [id, profile] of Object.entries(dict)) {
+            if (profile !== null && typeof profile === 'object') {
+              const baseURL = String(profile.baseURL ?? '') || FALLBACK_BASE_URLS[id] || '';
+              push(id, baseURL);
+            } else if (typeof profile === 'string' && profile !== '') {
+              push(id, profile);
+            } else if (profile === null || typeof profile === 'object') {
+              push(id, FALLBACK_BASE_URLS[id] ?? '');
+            }
+          }
+          continue;
+        }
+        if (typeof value.baseURL === 'string' && value.baseURL !== '') {
+          push(ns.replace(/^llm-/, '') || ns, value.baseURL);
+        }
+      }
+      return out;
     }
 
     /* ---------- hooks ---------- */
@@ -236,6 +321,11 @@ window.__ModuleLoader__.load({
       const [status, setStatus] = React.useState('');
       const serverMode = React.useMemo(() => readBiliMode(form), [form, snapshot]);
       const [biliMode, setBiliMode] = React.useState(serverMode);
+      const serverSys = React.useMemo(() => readSystemProxy(form), [form, snapshot]);
+      const [sysProxy, setSysProxy] = React.useState(serverSys);
+      const [tick, setTick] = React.useState(0);
+      const detected = React.useMemo(() => detectedProviders(ctx), [ctx, snapshot, tick]);
+      const [drafts, setDrafts] = React.useState({});
       const rowsRef = React.useRef(rows);
       rowsRef.current = rows;
       const sentRef = React.useRef('');
@@ -279,6 +369,10 @@ window.__ModuleLoader__.load({
         setBiliMode(serverMode);
       }, [serverMode]);
 
+      React.useEffect(() => {
+        setSysProxy(serverSys);
+      }, [serverSys]);
+
       const changeBili = React.useCallback(
         async (value) => {
           setBiliMode(value);
@@ -291,6 +385,62 @@ window.__ModuleLoader__.load({
           }
         },
         [form],
+      );
+
+      const changeSystemProxy = React.useCallback(
+        async (value) => {
+          setSysProxy(value);
+          if (form === undefined) return;
+          setStatus(text.saving);
+          try {
+            const ok = await form.mutate([{ op: 'set', path: ['systemProxy'], value }]);
+            setStatus(ok === false ? text.failed : text.saved);
+          } catch (error) {
+            setStatus(`${text.failed}（${String(error?.message ?? error)}）`);
+          }
+        },
+        [form],
+      );
+
+      const suggestions = React.useMemo(
+        () =>
+          detected.filter(
+            (item) =>
+              !rows.some((row) => row.provider === item.provider || (item.baseURL !== '' && hostOf(row.baseURL) === hostOf(item.baseURL))),
+          ),
+        [detected, rows],
+      );
+
+      const refreshDetection = React.useCallback(() => {
+        try {
+          const forms = serviceOf(ctx);
+          const mirror = forms?.describe?.();
+          mirror?.invalidate?.();
+          mirror?.load?.();
+          mirror?.ensure?.();
+        } catch {
+          /* a failed refresh must not break the page */
+        }
+        setTick((value) => value + 1);
+      }, [ctx]);
+
+      const commitSuggestion = React.useCallback(
+        (item) => {
+          const draft = drafts[item.provider] ?? {};
+          const proxy = String(draft.proxy ?? '').trim();
+          const baseURL = String(draft.baseURL ?? '').trim() || item.baseURL;
+          if (proxy === '' || baseURL === '') return;
+          const next = [...rowsRef.current, { provider: item.provider, baseURL, proxy }];
+          setRows(next);
+          setDrafts((current) => {
+            const copy = { ...current };
+            delete copy[item.provider];
+            return copy;
+          });
+          setDirty(true);
+          persist(next);
+        },
+        [drafts, persist],
       );
 
       const children = [
@@ -312,6 +462,9 @@ window.__ModuleLoader__.load({
         return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px 16px' } }, children);
       }
 
+      children.push(
+        h('p', { key: 'sec1', style: { margin: '6px 0 0', fontSize: 12, fontWeight: 600 } }, text.section1),
+      );
       children.push(
         rows.length === 0
           ? h('p', { key: 'empty', style: { margin: 0, fontSize: 12, opacity: 0.6 } }, text.empty)
@@ -401,6 +554,67 @@ window.__ModuleLoader__.load({
       children.push(
         h(
           'div',
+          { key: 'detected', style: { paddingTop: 10, borderTop: '1px solid rgba(127,127,127,.18)', display: 'flex', flexDirection: 'column', gap: 4 } },
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+            h('p', { style: { margin: 0, fontSize: 12, fontWeight: 600 } }, text.detectedTitle),
+            h('span', { style: { fontSize: 11, opacity: 0.55 } }, text.detectedCount(detected.length, suggestions.length)),
+            h(
+              'button',
+              { type: 'button', style: { ...buttonStyle, marginLeft: 'auto' }, onClick: refreshDetection },
+              text.refresh,
+            ),
+          ),
+          h('p', { style: { margin: 0, fontSize: 11, opacity: 0.6, lineHeight: '16px' } }, text.detectedHint),
+          suggestions.length === 0
+            ? h('p', { style: { margin: 0, fontSize: 11, opacity: 0.55 } }, text.detectedNone)
+            : suggestions.map((item) =>
+                h(
+                  'div',
+                  { key: item.provider, style: { ...rowStyle, paddingTop: 6 } },
+                  h('span', { style: { width: 108, flex: '0 0 auto', fontSize: 12, opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis' } }, item.provider),
+                  h('input', {
+                    style: { ...inputStyle, flex: '1 1 auto', minWidth: 160 },
+                    value: drafts[item.provider]?.baseURL ?? item.baseURL,
+                    spellCheck: false,
+                    placeholder: text.baseURLPlaceholder2,
+                    onChange: (event) =>
+                      setDrafts((current) => ({ ...current, [item.provider]: { ...current[item.provider], baseURL: event.target.value } })),
+                  }),
+                  h('input', {
+                    style: { ...inputStyle, width: 200, flex: '0 0 auto' },
+                    value: drafts[item.provider]?.proxy ?? '',
+                    spellCheck: false,
+                    placeholder: text.proxyPlaceholder,
+                    onChange: (event) =>
+                      setDrafts((current) => ({ ...current, [item.provider]: { ...current[item.provider], proxy: event.target.value } })),
+                    onBlur: () => commitSuggestion(item),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter') commitSuggestion(item);
+                    },
+                  }),
+                ),
+              ),
+        ),
+      );
+      const advancedBlocks = [];
+      advancedBlocks.push(
+        h(
+          'div',
+          { key: 'sysproxy', style: { paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 } },
+          h(
+            'label',
+            { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 } },
+            h('input', { type: 'checkbox', checked: sysProxy, onChange: (event) => changeSystemProxy(event.target.checked) }),
+            text.sysProxyLabel,
+          ),
+          h('p', { style: { margin: 0, fontSize: 11, opacity: 0.55, lineHeight: '16px' } }, text.sysProxyHint),
+        ),
+      );
+      advancedBlocks.push(
+        h(
+          'div',
           { key: 'bili', style: { paddingTop: 10, borderTop: '1px solid rgba(127,127,127,.18)', display: 'flex', flexDirection: 'column', gap: 6 } },
           h(
             'div',
@@ -419,6 +633,15 @@ window.__ModuleLoader__.load({
             ),
           ),
           h('p', { style: { margin: 0, fontSize: 11, opacity: 0.55, lineHeight: '16px' } }, text.biliHint),
+          h('p', { style: { margin: 0, fontSize: 11, opacity: 0.45, lineHeight: '16px' } }, text.biliAbsent),
+        ),
+      );
+      children.push(
+        h(
+          'details',
+          { key: 'advanced', style: { paddingTop: 10, borderTop: '1px solid rgba(127,127,127,.18)' } },
+          h('summary', { style: { cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: 0.85 } }, text.advanced),
+          ...advancedBlocks,
         ),
       );
 
@@ -440,113 +663,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /* ---------- per-provider card field ---------- */
-
-    function ProviderProxyField(props) {
-      const ctx = props?.ctx;
-      const entry = props?.provider ?? {};
-      const providerId = String(entry.provider ?? entry.id ?? '');
-      const defaultBaseURL = String(entry.defaultBaseURL ?? '');
-      const { form } = useConfigForm(ctx);
-      const snapshot = useFormSnapshot(form);
-      const serverRows = React.useMemo(() => readRows(form), [form, snapshot]);
-      const serverKey = signatureOf(serverRows);
-
-      const [baseURL, setBaseURL] = React.useState('');
-      const [proxy, setProxy] = React.useState('');
-      const [dirty, setDirty] = React.useState(false);
-      const [status, setStatus] = React.useState('');
-
-      const current = React.useMemo(() => {
-        const exact = serverRows.find((row) => row.provider === providerId);
-        if (exact !== undefined) return exact;
-        const host = hostOf(defaultBaseURL);
-        if (host !== '') return serverRows.find((row) => hostOf(row.baseURL) === host);
-        return undefined;
-      }, [serverRows, providerId, defaultBaseURL]);
-
-      React.useEffect(() => {
-        if (dirty) return;
-        setBaseURL(current?.baseURL ?? defaultBaseURL);
-        setProxy(current?.proxy ?? '');
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [serverKey, providerId, defaultBaseURL]);
-
-      const commit = React.useCallback(async () => {
-        if (form === undefined) return;
-        setStatus(text.saving);
-        const next = serverRows.filter((row) => row.provider !== providerId);
-        const cleanBase = String(baseURL || '').trim();
-        if (cleanBase !== '') next.push({ provider: providerId, baseURL: cleanBase, proxy: String(proxy || '').trim() });
-        try {
-          const ok = await form.mutate([{ op: 'set', path: ['providers'], value: cleanRows(next) }]);
-          setDirty(false);
-          setStatus(ok === false ? text.failed : text.saved);
-        } catch (error) {
-          setStatus(`${text.failed}（${String(error?.message ?? error)}）`);
-        }
-      }, [form, serverRows, providerId, baseURL, proxy]);
-
-      if (providerId === '' || form === undefined) return null;
-
-      return h(
-        'div',
-        {
-          style: {
-            marginTop: 10,
-            paddingTop: 8,
-            borderTop: '1px dashed rgba(127,127,127,.28)',
-            display: 'flex',
-            flexDirection: 'column',
-          },
-        },
-        h('div', { style: { fontSize: 12, fontWeight: 600, opacity: 0.85 } }, text.cardTitle),
-        h(
-          'div',
-          { style: rowStyle },
-          h('span', { style: labelStyle }, text.baseURL),
-          h('input', {
-            style: inputStyle,
-            value: baseURL,
-            spellCheck: false,
-            placeholder: text.baseURLPlaceholder,
-            onChange: (event) => {
-              setDirty(true);
-              setBaseURL(event.target.value);
-            },
-            onBlur: commit,
-            onKeyDown: (event) => {
-              if (event.key === 'Enter') event.currentTarget.blur();
-            },
-          }),
-        ),
-        h(
-          'div',
-          { style: rowStyle },
-          h('span', { style: labelStyle }, text.proxy),
-          h('input', {
-            style: inputStyle,
-            value: proxy,
-            spellCheck: false,
-            placeholder: text.proxyPlaceholder,
-            onChange: (event) => {
-              setDirty(true);
-              setProxy(event.target.value);
-            },
-            onBlur: commit,
-            onKeyDown: (event) => {
-              if (event.key === 'Enter') event.currentTarget.blur();
-            },
-          }),
-        ),
-        h(
-          'div',
-          { style: { marginTop: 4, fontSize: 11, opacity: 0.6, display: 'flex', gap: 8 } },
-          h('span', null, text.cardHint),
-          status === '' ? null : h('span', null, status),
-        ),
-      );
-    }
 
     return {
       inject: ['slots', 'configForms'],
@@ -563,11 +679,6 @@ window.__ModuleLoader__.load({
             (props) => h(ProviderProxyPage, { ...props, ctx }),
           ),
         );
-        for (const namespace of ['llm-pi-ai', 'llm-deepseek']) {
-          ctx.slots.inject(PROVIDER_CARD_SLOT, () =>
-            ctx.slots.register({ name: PROVIDER_CARD_SLOT, key: namespace }, (props) => h(ProviderProxyField, { ...props, ctx })),
-          );
-        }
       },
     };
   },
