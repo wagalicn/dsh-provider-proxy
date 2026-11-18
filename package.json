@@ -19,7 +19,8 @@
     "icon.svg",
     "docs",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CONTRIBUTING.md"
   ],
   "keywords": [
     "dsh",

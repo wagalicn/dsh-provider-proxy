@@ -124,6 +124,12 @@ node    https.request api.deepseek.com/chat/completions -> http://127.0.0.1:7890
 - 按 hostname 匹配，不看路径/模型名；
 - 需要重启 DSH 才能让新增的拦截层装上。
 
+## 贡献 / Contributing
+
+- **Issue 欢迎**：bug、兼容性、文档问题都可以提。
+- **不接受 Pull Request**：外部改动不合并进 `main`，有用的话请在 issue 里说明，我自己实现。
+- **可以 Fork 二开**：MIT 许可，随意改、改名、私有部署，保留 `LICENSE` 的版权声明即可，详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
 ## License
 
 MIT
