@@ -14,6 +14,9 @@ DSH 自带的代理是**进程级**的：启动时读一次 `HTTPS_PROXY`，所�
 
 ## 安装
 
+> npm: https://www.npmjs.com/package/@wagalicn/dsh-provider-proxy · GitHub: https://github.com/wagalicn/dsh-provider-proxy
+> 已提交 dshbase 插件目录收录；在 DSH 插件市场里搜 `dsh-provider-proxy` 也能装（收录审核中）。
+
 ```bash
 # 从 npm（推荐）
 dsh plugin add @wagalicn/dsh-provider-proxy
