@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "提供商代理",
+    "description": "为每个模型提供商单独设置 HTTP 代理；未配置的提供商直连。",
+    "detail": "docs/DETAIL.md"
+  }
+}

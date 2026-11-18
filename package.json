@@ -1,0 +1,76 @@
+{
+  "name": "@wagalicn/dsh-provider-proxy",
+  "version": "1.0.0",
+  "description": "Per-provider HTTP proxy routing for DeepSeek Harness: each model provider can use its own HTTP proxy, or go direct.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "docs", "README.md", "LICENSE"],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "proxy",
+    "http-proxy",
+    "egress",
+    "bedrock",
+    "llm"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "wagalicn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wagalicn/dsh-provider-proxy.git"
+  },
+  "homepage": "https://github.com/wagalicn/dsh-provider-proxy#readme",
+  "bugs": {
+    "url": "https://github.com/wagalicn/dsh-provider-proxy/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+  },
+  "dependencies": {
+    "undici": "^7.29.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "*"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    },
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+    }
+  },
+  "dshhub": {
+    "schemaVersion": 1,
+    "displayName": {
+      "zh": "提供商代理",
+      "en": "Provider Proxy"
+    },
+    "summary": {
+      "zh": "给每个模型提供商单独设定出口代理，未配置的直接直连；可选与 billion-context 同步。",
+      "en": "Per-provider egress proxy for model providers, with optional billion-context sync."
+    },
+    "categories": ["网络", "设置"],
+    "surfaces": ["host", "web"],
+    "permissions": {
+      "network": ["http:", "https:"]
+    }
+  }
+}

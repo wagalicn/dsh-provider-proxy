@@ -1,0 +1,5 @@
+- insert:
+    - id: provider-proxy
+      name: '@wagalicn/dsh-provider-proxy'
+      config:
+        providers: []

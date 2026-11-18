@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Provider proxy",
+    "description": "Give each model provider its own HTTP proxy; providers without one go direct.",
+    "detail": "docs/DETAIL.md"
+  }
+}
